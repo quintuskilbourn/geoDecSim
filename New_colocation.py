@@ -3,6 +3,8 @@ import math
 import json
 from abc import ABC, abstractmethod
 import time
+from pathlib import Path
+import os
 
 class Space(ABC):
     """
@@ -257,7 +259,7 @@ def med_mean_distance(dist_matrix):
         return median(distances), mean(distances)
     return 0.0,0.0
 
-def run_simulation(node_count=10, gamma=0.3, rounds_per_node=3, checkpoint_count=100, num_candidates=50, reward_func_name="all_reward",seed=0):
+def run_simulation(node_count=10, gamma=0.3, rounds_per_node=3, checkpoint_count=100, num_candidates=50, reward_func_name="all_reward",seed=0,experiment_name="general_data"):
     #if no seed provided, randomise
     if not seed:
         seed=(time.time()*1000)%10000
@@ -265,6 +267,7 @@ def run_simulation(node_count=10, gamma=0.3, rounds_per_node=3, checkpoint_count
     random.seed(seed)
     space = SphericalSpace()  # or your chosen space
 
+    __location__ = os.path.realpath(os.path.join(os.getcwd(), os.path.dirname(__file__)))
     rounds_count = node_count*rounds_per_node
     checkpoint_rounds = max(int(rounds_count/checkpoint_count),1)
     all_checkpoints=[]
@@ -278,7 +281,7 @@ def run_simulation(node_count=10, gamma=0.3, rounds_per_node=3, checkpoint_count
         "declining_reward":declining_reward
     }
     reward_func = reward_funcs[reward_func_name]
-    output_json_file= reward_func_name+"_"+str(rounds_per_node)+"_"+str(node_count)+"_"+str(round(gamma,2))+"_"+str(seed)+".json"
+    output_json_file= experiment_name+"/"+reward_func_name+"_"+str(rounds_per_node)+"_"+str(node_count)+"_"+str(round(gamma,2))+"_"+str(seed)+".json"
 
 
     def record_checkpoint(round_idx):
@@ -325,9 +328,13 @@ def run_simulation(node_count=10, gamma=0.3, rounds_per_node=3, checkpoint_count
             "checkpoints": all_checkpoints,
             "node_thresh": node_thresh
         }
-    with open(output_json_file, "w") as f:
+
+    Path(__location__+"/"+experiment_name).mkdir(parents=True, exist_ok=True)
+    with open(__location__ + "/" + output_json_file, "w") as f:
         json.dump(output_data, f, indent=2)
-    with open("files.json", "r+") as f:
+    
+    print(__location__+"/files.json")
+    with open(__location__+"/files.json", "r+") as f:
         files = json.load(f)
         files.append(output_json_file)
         f.seek(0)
@@ -347,6 +354,7 @@ if __name__ == "__main__":
     checkpoint_count=50
     num_candidates=30
     seed=7
+    experiment_name="general_data"
 
     #demo
     run_simulation()
