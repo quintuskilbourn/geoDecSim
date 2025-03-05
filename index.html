@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Sphere Visualization + Distance Charts</title>
+  <style>
+    body { margin: 0; overflow: hidden; background: #000; }
+    .controls {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      z-index: 10;
+      background: rgba(255,255,255,0.8);
+      padding: 8px;
+      border-radius: 4px;
+    }
+    .controls * { font-family: sans-serif; font-size: 13px; }
+    .chart-container {
+      position: absolute;
+      right: 10px;
+      z-index: 10;
+      background: #fff;
+      padding: 4px;
+      border: 1px solid #ccc;
+      margin-bottom: 5px;
+    }
+    #tooltip {
+      position: absolute;
+      background: rgba(255,255,255,0.9);
+      color: #000;
+      padding: 4px 8px;
+      border-radius: 4px;
+      pointer-events: none;
+      font-family: sans-serif;
+      font-size: 13px;
+      display: none;
+      z-index: 20;
+    }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+  <div class="controls">
+    <!-- Dynamic file selector -->
+    <label for="fileSelector">Data File:</label>
+    <select id="fileSelector"></select>
+    <button id="loadFileBtn">Load File</button>
+    <br><br>
+    <!-- Round controls -->
+    <div id="roundInfo">
+      <button id="prevRound">Prev Round</button>
+      <button id="nextRound">Next Round</button>
+      <label><input type="checkbox" id="autoplayToggle"> Auto-Play</label>
+      <label>Speed:
+        <input type="range" id="speedRange" min="0.5" max="5" step="0.5" value="1">
+        <span id="speedLabel">1</span> rounds/sec
+      </label>
+      <div>Current Round: <span id="roundIdxDisplay"></span></div>
+    </div>
+  </div>
+
+  <div id="tooltip"></div>
+
+  <!-- Two charts: one for median, one for mean distances -->
+  <div class="chart-container" style="top: 10px;">
+    <canvas id="medianChart" width="300" height="150"></canvas>
+  </div>
+  <div class="chart-container" style="top: 180px;">
+    <canvas id="meanChart" width="300" height="150"></canvas>
+  </div>
+
+  <!-- Import map for Three.js -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.150.1/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.150.1/examples/jsm/"
+    }
+  }
+  </script>
+
+  <!-- Main Script -->
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+    // =========== Global Variables ===========
+    let scene, camera, renderer, controls;
+    let sphereMesh, heatmapTexture;
+    let nodes = [];         // Each node: { position: Vector3, score: number, radius: number, mesh: Mesh }
+    let nodeSpheres = [];
+    const sphereRadius = 1;
+    let checkpoints = [];
+    let gamma = 3;
+    let currentCheckpointIdx = 0;
+    let distanceData = [];  // Array of { round, median, mean }
+    let autoPlayInterval = null;
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+    let hoveredNode = null;
+    // Grid resolution for heatmap:
+    const latDiv = 50, lonDiv = 100;
+
+    // =========== Initialization ===========
+    initScene();
+    animate();
+
+    // Load file list from "files.json" and populate selector
+    loadFileList('files.json')
+      .then(fileList => populateFileSelector(fileList))
+      .catch(err => console.error("Could not load file list:", err));
+
+    // =========== UI Event Listeners ===========
+    document.getElementById('loadFileBtn').addEventListener('click', () => {
+      const sel = document.getElementById('fileSelector');
+      const chosenFile = sel.value;
+      loadSimulationData(chosenFile);
+    });
+    document.getElementById('nextRound').addEventListener('click', () => goToCheckpoint(currentCheckpointIdx + 1));
+    document.getElementById('prevRound').addEventListener('click', () => goToCheckpoint(currentCheckpointIdx - 1));
+    document.getElementById('autoplayToggle').addEventListener('change', onAutoplayChange);
+    document.getElementById('speedRange').addEventListener('input', onSpeedChange);
+
+    // =========== File List Functions ===========
+    async function loadFileList(fileListJsonPath) {
+      const resp = await fetch(fileListJsonPath);
+      if (!resp.ok) {
+        throw new Error(`HTTP ${resp.status} - ${resp.statusText}`);
+      }
+      const list = await resp.json();
+      return list; // Array of filenames
+    }
+    function populateFileSelector(fileList) {
+      const sel = document.getElementById('fileSelector');
+      sel.innerHTML = "";
+      fileList.forEach(filename => {
+        const opt = document.createElement('option');
+        opt.value = filename;
+        opt.textContent = filename;
+        sel.appendChild(opt);
+      });
+      // Automatically load the first file if available
+      if (fileList.length > 0) {
+        sel.value = fileList[0];
+        loadSimulationData(fileList[0]);
+      }
+    }
+
+    // =========== Load Simulation Data ===========
+    async function loadSimulationData(jsonFile) {
+      try {
+        const resp = await fetch(jsonFile);
+        if (!resp.ok) {
+          throw new Error(`HTTP ${resp.status} - ${resp.statusText}`);
+        }
+        const data = await resp.json();
+        checkpoints = data.checkpoints || [];
+        gamma = data.gamma || gamma;
+        // Build distanceData array for charts
+        distanceData = checkpoints.map(cp => ({
+          round: cp.round_idx,
+          median: cp.median_distance != null ? cp.median_distance : 0,
+          mean: cp.mean_distance != null ? cp.mean_distance : 0
+        }));
+        // Load the first checkpoint
+        goToCheckpoint(0, true);
+        drawMedianDistanceChart();
+        drawMeanDistanceChart();
+      } catch (err) {
+        console.error("Failed to load simulation data from", jsonFile, err);
+      }
+    }
+
+    // =========== Scene Setup ===========
+    function initScene() {
+      scene = new THREE.Scene();
+      camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 1000);
+      camera.position.set(0, 0, 3);
+      renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      document.body.appendChild(renderer.domElement);
+      controls = new OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+      controls.dampingFactor = 0.1;
+      controls.enablePan = false;
+
+      // Build a pastel heatmap texture for the sphere surface.
+      // (For now, we still create it, but it is not used; you can comment out updateHeatmap() if needed.)
+      heatmapTexture = new THREE.CanvasTexture(buildHeatmapCanvas());
+      heatmapTexture.needsUpdate = true;
+      const sphereGeom = new THREE.SphereGeometry(sphereRadius, 64, 32);
+      const sphereMat = new THREE.MeshBasicMaterial({ map: heatmapTexture, transparent: true, opacity: 0.9 });
+      sphereMesh = new THREE.Mesh(sphereGeom, sphereMat);
+      scene.add(sphereMesh);
+
+      window.addEventListener('resize', onWindowResize);
+      renderer.domElement.addEventListener('mousemove', onMouseMove);
+    }
+    // Build an initial blank heatmap canvas
+    function buildHeatmapCanvas() {
+      const canvas = document.createElement('canvas');
+      canvas.width = 256;
+      canvas.height = 128;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = "#eeeeee";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      return canvas;
+    }
+    function onWindowResize() {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+
+    // =========== Checkpoint Navigation ===========
+    function goToCheckpoint(idx, skipBoundsCheck = false) {
+      if (!skipBoundsCheck) {
+        if (idx < 0) idx = 0;
+        if (idx >= checkpoints.length) idx = checkpoints.length - 1;
+      }
+      currentCheckpointIdx = idx;
+      if (checkpoints.length === 0) return;
+      const cp = checkpoints[currentCheckpointIdx];
+      document.getElementById('roundIdxDisplay').textContent = cp.round_idx;
+
+      // Remove previous node meshes
+      nodeSpheres.forEach(mesh => scene.remove(mesh));
+      nodeSpheres = [];
+
+      // Build nodes from checkpoint data. Now we use cp.radii to set each node’s radius.
+      nodes = cp.positions.map((posArr, i) => {
+        const pos = new THREE.Vector3(posArr[0], posArr[1], posArr[2]);
+        const score = cp.scores ? cp.scores[i] : 0;
+        const radiusVal = cp.radii ? cp.radii[i] : 0;
+        return { position: pos, score: score, radius: radiusVal, mesh: null };
+      });
+
+      // Compute maximum score to scale node sizes
+      const maxScore = Math.max(...nodes.map(n => n.score));
+      nodes.forEach(n => {
+        const frac = (maxScore === 0) ? 0 : n.score / maxScore;
+        // Node size: base size 0.02 plus extra up to 0.08 depending on score.
+        const nodeSize = 0.02 + 0.04 * frac;
+        const geom = new THREE.SphereGeometry(nodeSize, 16, 16);
+        // All nodes are black by default
+        const mat = new THREE.MeshBasicMaterial({ color: 0x000000 });
+        const mesh = new THREE.Mesh(geom, mat);
+        mesh.position.copy(n.position);
+        scene.add(mesh);
+        nodeSpheres.push(mesh);
+        n.mesh = mesh;
+      });
+
+      // Optionally update the heatmap. (Comment out if you want to drop it.)
+      // updateHeatmap();
+
+      console.log(`Switched to checkpoint #${currentCheckpointIdx}, round ${cp.round_idx}.`);
+    }
+
+    // =========== (Optional) Update Heatmap ===========
+    /*
+    function updateHeatmap() {
+      const canvas = heatmapTexture.image;
+      const ctx = canvas.getContext('2d');
+      const w = canvas.width, h = canvas.height;
+      let maxHeat = 0;
+      const grid = [];
+      for (let i = 0; i < h; i++) {
+        grid[i] = [];
+        const lat = -90 + (180 * i / (h - 1));
+        for (let j = 0; j < w; j++) {
+          const lon = -180 + (360 * j / (w - 1));
+          const pt = latLonToXYZ(lat, lon, sphereRadius);
+          let heat = 0;
+          nodes.forEach(n => {
+            const d = geodesicDistance(pt, n.position);
+            if (d <= n.radius) { heat++; }
+          });
+          grid[i][j] = heat;
+          if (heat > maxHeat) maxHeat = heat;
+        }
+      }
+      for (let i = 0; i < h; i++) {
+        for (let j = 0; j < w; j++) {
+          const heat = grid[i][j];
+          const frac = maxHeat > 0 ? heat / maxHeat : 0;
+          const hue = (1 - frac) * 200;
+          const color = `hsla(${hue}, 50%, 85%, 0.8)`;
+          ctx.fillStyle = color;
+          ctx.fillRect(j, i, 1, 1);
+        }
+      }
+      heatmapTexture.needsUpdate = true;
+    }
+    */
+
+    function latLonToXYZ(latDeg, lonDeg, r = 1) {
+      const lat = THREE.MathUtils.degToRad(latDeg);
+      const lon = THREE.MathUtils.degToRad(lonDeg);
+      const x = r * Math.cos(lat) * Math.cos(lon);
+      const y = r * Math.cos(lat) * Math.sin(lon);
+      const z = r * Math.sin(lat);
+      return new THREE.Vector3(x, y, z);
+    }
+    function geodesicDistance(v1, v2) {
+      const dot = v1.clone().normalize().dot(v2.clone().normalize());
+      return Math.acos(THREE.MathUtils.clamp(dot, -1, 1));
+    }
+
+    // =========================== Charts for Viz Tab ===========================
+    // We now add axis labels, tick marks (0 and max), and a title.
+    function drawMedianDistanceChart() {
+      const canvas = document.getElementById('medianChart');
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      if (distanceData.length === 0) return;
+      // X axis: median distance; Y axis: rounds.
+      const medVals = distanceData.map(d => d.median);
+      const rounds = distanceData.map(d => d.round);
+      const minDist = 0; // include 0 tick
+      const maxDist = Math.max(...medVals);
+      const minRound = 0; // include 0 tick
+      const maxRound = Math.max(...rounds);
+      const xPad = 50, yPad = 40;
+      const w = canvas.width - xPad * 2, h = canvas.height - yPad * 2;
+      // Scale functions
+      const xScale = d => xPad + ((d - minDist) / (maxDist - minDist)) * w;
+      const yScale = r => yPad + h - ((r - minRound) / (maxRound - minRound)) * h;
+      // Draw title
+      ctx.fillStyle = "#000";
+      ctx.font = "bold 14px sans-serif";
+      ctx.fillText("Median", canvas.width/2 - 30, 15);
+      // Draw axes
+      ctx.beginPath();
+      ctx.moveTo(xPad, yPad + h);
+      ctx.lineTo(xPad + w, yPad + h);
+      ctx.moveTo(xPad, yPad);
+      ctx.lineTo(xPad, yPad + h);
+      ctx.strokeStyle = "#000";
+      ctx.stroke();
+      ctx.closePath();
+      // Draw tick marks and labels for x axis (distance)
+      ctx.font = "12px sans-serif";
+      ctx.fillText("0", xPad - 10, yPad + h + 15);
+      ctx.fillText(maxDist.toFixed(2), xPad + w - 20, yPad + h + 15);
+      // Draw tick marks and labels for y axis (rounds)
+      ctx.fillText("0", xPad - 25, yPad + h + 5);
+      ctx.fillText(maxRound, xPad - 25, yPad + 10);
+      // Label axes
+      ctx.fillText("Distance", xPad + w/2 - 30, yPad + h + 30);
+      ctx.save();
+      ctx.translate(15, yPad + h/2 + 30);
+      ctx.rotate(-Math.PI / 2);
+      ctx.fillText("Rounds", 0, 0);
+      ctx.restore();
+      // Plot data line
+      ctx.beginPath();
+      ctx.moveTo(xScale(medVals[0]), yScale(rounds[0]));
+      for (let i = 1; i < distanceData.length; i++) {
+        ctx.lineTo(xScale(medVals[i]), yScale(rounds[i]));
+      }
+      ctx.stroke();
+      ctx.closePath();
+    }
+    function drawMeanDistanceChart() {
+      const canvas = document.getElementById('meanChart');
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      if (distanceData.length === 0) return;
+      // X axis: mean distance; Y axis: rounds.
+      const meanVals = distanceData.map(d => d.mean);
+      const rounds = distanceData.map(d => d.round);
+      const minDist = 0;
+      const maxDist = Math.max(...meanVals);
+      const minRound = 0;
+      const maxRound = Math.max(...rounds);
+      const xPad = 50, yPad = 40;
+      const w = canvas.width - xPad * 2, h = canvas.height - yPad * 2;
+      const xScale = d => xPad + ((d - minDist) / (maxDist - minDist)) * w;
+      const yScale = r => yPad + h - ((r - minRound) / (maxRound - minRound)) * h;
+      // Draw title
+      ctx.fillStyle = "#000";
+      ctx.font = "bold 14px sans-serif";
+      ctx.fillText("Mean", canvas.width/2 - 30, 15);
+      // Draw axes
+      ctx.beginPath();
+      ctx.moveTo(xPad, yPad + h);
+      ctx.lineTo(xPad + w, yPad + h);
+      ctx.moveTo(xPad, yPad);
+      ctx.lineTo(xPad, yPad + h);
+      ctx.strokeStyle = "#000";
+      ctx.stroke();
+      ctx.closePath();
+      // Draw tick marks and labels for x axis
+      ctx.font = "12px sans-serif";
+      ctx.fillText("0", xPad - 10, yPad + h + 15);
+      ctx.fillText(maxDist.toFixed(2), xPad + w - 20, yPad + h + 15);
+      // Draw tick marks and labels for y axis
+      ctx.fillText("0", xPad - 25, yPad + h + 5);
+      ctx.fillText(maxRound, xPad - 25, yPad + 10);
+      // Label axes
+      ctx.fillText("Distance", xPad + w/2 - 30, yPad + h + 30);
+      ctx.save();
+      ctx.translate(15, yPad + h/2 + 30);
+      ctx.rotate(-Math.PI / 2);
+      ctx.fillText("Rounds", 0, 0);
+      ctx.restore();
+      // Plot data line
+      ctx.beginPath();
+      ctx.moveTo(xScale(meanVals[0]), yScale(rounds[0]));
+      for (let i = 1; i < distanceData.length; i++) {
+        ctx.lineTo(xScale(meanVals[i]), yScale(rounds[i]));
+      }
+      ctx.stroke();
+      ctx.closePath();
+    }
+
+    // =========================== Mouse Handling: Hover for Tooltip and Highlight ===========================
+    function onMouseMove(event) {
+      const rect = renderer.domElement.getBoundingClientRect();
+      mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+      mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+      raycaster.setFromCamera(mouse, camera);
+      const intersects = raycaster.intersectObjects(nodeSpheres);
+      if (intersects.length > 0) {
+        const first = intersects[0];
+        const nodeObj = nodes.find(n => n.mesh === first.object);
+        if (nodeObj) {
+          hoveredNode = nodeObj;
+          showTooltipForNode(nodeObj, event.clientX, event.clientY);
+          highlightRadiusOfInfluence(nodeObj);
+          return;
+        }
+      }
+      hoveredNode = null;
+      document.getElementById('tooltip').style.display = 'none';
+      revertNodeColors();
+    }
+    function showTooltipForNode(nodeObj, x, y) {
+      const tooltip = document.getElementById('tooltip');
+      tooltip.style.display = 'block';
+      tooltip.style.left = (x + 10) + 'px';
+      tooltip.style.top = (y + 10) + 'px';
+      tooltip.textContent = `Score: ${nodeObj.score}`;
+    }
+    function highlightRadiusOfInfluence(hovered) {
+      const factor = 1.0;
+      nodes.forEach(n => {
+        const d = geodesicDistance(hovered.position, n.position);
+        if (d <= hovered.radius * factor) {
+          n.mesh.material.color.set(0x00ff00);
+        } else {
+          n.mesh.material.color.set(0x000000);
+        }
+      });
+    }
+    function revertNodeColors() {
+      nodes.forEach(n => n.mesh.material.color.set(0x000000));
+    }
+
+    // =========================== Autoplay ===========================
+    function onAutoplayChange() {
+      if (this.checked) {
+        startAutoPlay();
+      } else {
+        stopAutoPlay();
+      }
+    }
+    function onSpeedChange() {
+      const sp = document.getElementById('speedLabel');
+      sp.textContent = this.value;
+      if (autoPlayInterval) {
+        stopAutoPlay();
+        startAutoPlay();
+      }
+    }
+    function startAutoPlay() {
+      const rps = parseFloat(document.getElementById('speedRange').value);
+      autoPlayInterval = setInterval(() => {
+        goToCheckpoint(currentCheckpointIdx + 1);
+        if (currentCheckpointIdx >= checkpoints.length - 1) {
+          stopAutoPlay();
+        }
+      }, 1000 / rps);
+    }
+    function stopAutoPlay() {
+      clearInterval(autoPlayInterval);
+      autoPlayInterval = null;
+    }
+
+    // =========================== Render Loop ===========================
+    function animate() {
+      requestAnimationFrame(animate);
+      controls.update();
+      renderer.render(scene, camera);
+    }
+  </script>
+</body>
+</html>

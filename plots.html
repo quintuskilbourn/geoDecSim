@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Comparison of Simulation JSON Files</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      margin: 0;
+      padding: 20px;
+      background: #f0f0f0;
+    }
+    h1 {
+      text-align: center;
+    }
+    .file-selection {
+      margin-bottom: 20px;
+      background: #fff;
+      padding: 10px;
+      border: 1px solid #ccc;
+      max-width: 600px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+    .chart-container {
+      margin: 10px auto;
+      background: #fff;
+      padding: 10px;
+      border: 1px solid #ccc;
+      max-width: 600px;
+    }
+    canvas {
+      display: block;
+      margin: 0 auto;
+      background: #ffffff;
+    }
+  </style>
+</head>
+<body>
+  <h1>Simulation Comparison</h1>
+  <div class="file-selection">
+    <p>Select one or more JSON files to compare:</p>
+    <div id="fileCheckboxes"></div>
+    <button id="compareBtn">Compare</button>
+  </div>
+  
+  <!-- Three charts -->
+  <div class="chart-container">
+    <canvas id="compMedianChart" width="600" height="300"></canvas>
+  </div>
+  <div class="chart-container">
+    <canvas id="compMeanChart" width="600" height="300"></canvas>
+  </div>
+  <div class="chart-container">
+    <canvas id="compClusteringChart" width="600" height="300"></canvas>
+  </div>
+  
+  <script>
+    // Global object to hold the comparison datasets.
+    // It will be keyed by filename with value: array of { round, median, mean, clustering }
+    let comparisonDatasets = {};
+
+    // Colors for the lines
+    const colors = ["#e41a1c", "#377eb8", "#4daf4a", "#984ea3", "#ff7f00", "#a65628", "#f781bf"];
+
+    // Load the list of available JSON files from files.json
+    async function loadFileList(fileListJsonPath) {
+      const resp = await fetch(fileListJsonPath);
+      if (!resp.ok) {
+        throw new Error(`HTTP ${resp.status} - ${resp.statusText}`);
+      }
+      const list = await resp.json();
+      return list; // Expecting an array of filenames
+    }
+
+    // Populate the checkboxes for file selection
+    function populateComparisonCheckboxes(fileList) {
+      const container = document.getElementById('fileCheckboxes');
+      container.innerHTML = "";
+      fileList.forEach(filename => {
+        const label = document.createElement('label');
+        label.style.display = "block";
+        const checkbox = document.createElement('input');
+        checkbox.type = "checkbox";
+        checkbox.value = filename;
+        label.appendChild(checkbox);
+        label.appendChild(document.createTextNode(" " + filename));
+        container.appendChild(label);
+      });
+    }
+
+    // Load a single JSON file and extract its checkpoints data
+    async function loadComparisonDataForFile(filename) {
+      const resp = await fetch(filename);
+      if (!resp.ok) {
+        throw new Error(`HTTP ${resp.status} - ${resp.statusText}`);
+      }
+      const data = await resp.json();
+      // Map each checkpoint to an object with round, median, mean, clustering.
+      // If any attribute is missing, use 0.
+      const arr = (data.checkpoints || []).map(cp => ({
+        round: cp.round_idx,
+        median: cp.median_distance != null ? cp.median_distance : 0,
+        mean: cp.mean_distance != null ? cp.mean_distance : 0,
+        clustering: cp.clustering != null ? cp.clustering : 0
+      }));
+      return arr;
+    }
+
+    // Load all selected JSON files.
+    async function loadComparisonData(fileList) {
+      comparisonDatasets = {}; // Clear previous data.
+      for (const file of fileList) {
+        try {
+          const data = await loadComparisonDataForFile(file);
+          comparisonDatasets[file] = data;
+        } catch (err) {
+          console.error("Error loading file", file, err);
+        }
+      }
+      drawComparisonCharts();
+    }
+
+    // Draw all three charts.
+    function drawComparisonCharts() {
+      drawComparisonChart("compMedianChart", "median", "Median");
+      drawComparisonChart("compMeanChart", "mean", "Mean");
+      drawComparisonChart("compClusteringChart", "clustering", "Clustering");
+    }
+
+    // Draw a comparison chart.
+    // The x-axis is "Round" and the y-axis is the given metric.
+    // The title (e.g., "Median") is shown at the top.
+    function drawComparisonChart(canvasId, metric, title) {
+      const canvas = document.getElementById(canvasId);
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Gather all rounds and metric values across all datasets.
+      let allRounds = [];
+      let allMetricVals = [];
+      for (const file in comparisonDatasets) {
+        const dataset = comparisonDatasets[file];
+        dataset.forEach(dp => {
+          allRounds.push(dp.round);
+          allMetricVals.push(dp[metric]);
+        });
+      }
+      if (allRounds.length === 0) return;
+      const minRound = Math.min(...allRounds);
+      const maxRound = Math.max(...allRounds);
+      const minMetric = 0; // We'll force x-axis starting at 0.
+      const maxMetric = Math.max(...allMetricVals);
+
+      // Set padding for axes.
+      const xPad = 60, yPad = 50;
+      const w = canvas.width - xPad * 2;
+      const h = canvas.height - yPad * 2;
+
+      // Scaling functions: x = round, y = metric.
+      const xScale = r => xPad + ((r - minRound) / (maxRound - minRound)) * w;
+      const yScale = m => yPad + h - ((m - minMetric) / (maxMetric - minMetric)) * h;
+
+      // Draw chart title.
+      ctx.fillStyle = "#000";
+      ctx.font = "bold 16px sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText(title, canvas.width / 2, 20);
+
+      // Draw axes.
+      ctx.strokeStyle = "#000";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      // x-axis
+      ctx.moveTo(xPad, yPad + h);
+      ctx.lineTo(xPad + w, yPad + h);
+      // y-axis
+      ctx.moveTo(xPad, yPad);
+      ctx.lineTo(xPad, yPad + h);
+      ctx.stroke();
+      ctx.closePath();
+
+      // Draw tick marks and labels for x-axis (Rounds).
+      ctx.font = "12px sans-serif";
+      ctx.textAlign = "center";
+      // Left tick at minRound:
+      ctx.fillText(minRound, xPad, yPad + h + 20);
+      // Right tick at maxRound:
+      ctx.fillText(maxRound, xPad + w, yPad + h + 20);
+      // Label x-axis:
+      ctx.fillText("Round", xPad + w / 2, yPad + h + 40);
+
+      // Draw tick marks and labels for y-axis (Metric).
+      ctx.textAlign = "right";
+      ctx.fillText(minMetric.toFixed(2), xPad - 10, yPad + h + 4);
+      ctx.fillText(maxMetric.toFixed(2), xPad - 10, yPad + 10);
+      // Label y-axis:
+      ctx.save();
+      ctx.translate(xPad - 40, yPad + h / 2);
+      ctx.rotate(-Math.PI / 2);
+      ctx.textAlign = "center";
+      ctx.fillText(metric.charAt(0).toUpperCase() + metric.slice(1), 0, 0);
+      ctx.restore();
+
+      // For each dataset, plot a line.
+      let colorIndex = 0;
+      for (const file in comparisonDatasets) {
+        const dataset = comparisonDatasets[file];
+        ctx.strokeStyle = colors[colorIndex % colors.length];
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        // Sort dataset by round for consistency.
+        dataset.sort((a, b) => a.round - b.round);
+        // Move to first data point.
+        ctx.moveTo(xScale(dataset[0].round), yScale(dataset[0][metric]));
+        for (let i = 1; i < dataset.length; i++) {
+          ctx.lineTo(xScale(dataset[i].round), yScale(dataset[i][metric]));
+        }
+        ctx.stroke();
+        // Draw a legend entry.
+        ctx.fillStyle = ctx.strokeStyle;
+        ctx.fillText(file, xPad + 10, yPad + 20 + colorIndex * 15);
+        colorIndex++;
+      }
+    }
+
+    // =========================== Event Listener for "Compare" Button ===========================
+    document.getElementById('compareBtn').addEventListener('click', () => {
+      const checkboxes = document.querySelectorAll('#fileCheckboxes input[type=checkbox]:checked');
+      const filesToCompare = Array.from(checkboxes).map(cb => cb.value);
+      if (filesToCompare.length === 0) {
+        alert("Please select at least one file to compare.");
+        return;
+      }
+      loadComparisonData(filesToCompare);
+    });
+
+    // =========================== On Page Load ===========================
+    // Populate the file checkboxes using files.json.
+    loadFileList('files.json')
+      .then(fileList => populateComparisonCheckboxes(fileList))
+      .catch(err => console.error("Could not load file list for comparison:", err));
+  </script>
+</body>
+</html>
