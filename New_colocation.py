@@ -295,8 +295,6 @@ def run_simulation(node_count=10, gamma=0.3, rounds_per_node=3, checkpoint_count
                 "mean_distance":mean_distance,
                 "clustering": 0
             }
-            # print("median: ", median_distance)
-            # print("mean: ", mean_distance)
             all_checkpoints.append(cp)
 
     # 1) Initialize positions and distance matrix
