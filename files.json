@@ -1,1 +1,18 @@
-["dummy.json", "all_reward_3_10_0.3_9382.028564453125.json", "all_reward_3_100_0.3_7379.196044921875.json", "all_reward_3_200_0.3_7463.718505859375.json", "all_reward_3_300_0.3_7833.647216796875.json", "all_reward_3_400_0.3_8664.458251953125.json", "all_reward_3_500_0.3_9755.83544921875.json", "all_reward_3_10_0.3_5053.3896484375.json"]
+[
+"twelve_runs_per_node/five_hundred/all_reward_6000_500_0.05_7.json",
+"twelve_runs_per_node/five_hundred/all_reward_6000_500_0.1_7.json",
+"twelve_runs_per_node/five_hundred/all_reward_6000_500_0.2_7.json",
+"twelve_runs_per_node/five_hundred/all_reward_6000_500_0.3_7.json",
+"twelve_runs_per_node/five_hundred/all_reward_6000_500_0.4_7.json",
+"twelve_runs_per_node/five_hundred/all_reward_6000_500_0.5_7.json",
+"twelve_runs_per_node/five_hundred/all_reward_6000_500_0.7_7.json",
+"twelve_runs_per_node/five_hundred/all_reward_6000_500_0.9_7.json",
+"twelve_runs_per_node/two_fifty/all_reward_3000_250_0.05_7.json",
+"twelve_runs_per_node/two_fifty/all_reward_3000_250_0.3_7.json",
+"twelve_runs_per_node/two_fifty/all_reward_3000_250_0.7_7.json",
+"twelve_runs_per_node/two_fifty/all_reward_3000_250_0.1_7.json",
+"twelve_runs_per_node/two_fifty/all_reward_3000_250_0.4_7.json",
+"twelve_runs_per_node/two_fifty/all_reward_3000_250_0.9_7.json",
+"twelve_runs_per_node/two_fifty/all_reward_3000_250_0.2_7.json",
+"twelve_runs_per_node/two_fifty/all_reward_3000_250_0.5_7.json"
+]
