@@ -295,6 +295,8 @@ def run_simulation(node_count=10, gamma=0.3, rounds_per_node=3, checkpoint_count
                 "mean_distance":mean_distance,
                 "clustering": 0
             }
+            print("median: ", median_distance)
+            print("mean: ", mean_distance)
             all_checkpoints.append(cp)
 
     # 1) Initialize positions and distance matrix
@@ -347,173 +349,176 @@ if __name__ == "__main__":
     checkpoint_count=50
     num_candidates=30
     seed=7
+
+    #demo
+    run_simulation()
     
-    run_simulation(
-        node_count=node_count,
-        gamma=0.05,
-        rounds_count=rounds_count,
-        checkpoint_count=checkpoint_count,
-        num_candidates=num_candidates,
-        reward_func_name="all_reward",
-        seed=seed
-    )
+    # run_simulation(
+    #     node_count=node_count,
+    #     gamma=0.05,
+    #     rounds_per_node=rounds_per_node,
+    #     checkpoint_count=checkpoint_count,
+    #     num_candidates=num_candidates,
+    #     reward_func_name="all_reward",
+    #     seed=seed
+    # )
 
 
-    run_simulation(
-        node_count=node_count,
-        gamma=0.1,
-        rounds_count=rounds_count,
-        checkpoint_count=checkpoint_count,
-        num_candidates=num_candidates,
-        reward_func_name="all_reward",
-        seed=seed
-    )
+    # run_simulation(
+    #     node_count=node_count,
+    #     gamma=0.1,
+    #     rounds_per_node=rounds_per_node,
+    #     checkpoint_count=checkpoint_count,
+    #     num_candidates=num_candidates,
+    #     reward_func_name="all_reward",
+    #     seed=seed
+    # )
 
-    run_simulation(
-        node_count=node_count,
-        gamma=0.2,
-        rounds_count=rounds_count,
-        checkpoint_count=checkpoint_count,
-        num_candidates=num_candidates,
-        reward_func_name="all_reward",
-        seed=seed
-    )
-    run_simulation(
-        node_count=node_count,
-        gamma=0.3,
-        rounds_count=rounds_count,
-        checkpoint_count=checkpoint_count,
-        num_candidates=num_candidates,
-        reward_func_name="all_reward",
-        seed=seed
-    )
+    # run_simulation(
+    #     node_count=node_count,
+    #     gamma=0.2,
+    #     rounds_per_node=rounds_per_node,
+    #     checkpoint_count=checkpoint_count,
+    #     num_candidates=num_candidates,
+    #     reward_func_name="all_reward",
+    #     seed=seed
+    # )
+    # run_simulation(
+    #     node_count=node_count,
+    #     gamma=0.3,
+    #     rounds_per_node=rounds_per_node,
+    #     checkpoint_count=checkpoint_count,
+    #     num_candidates=num_candidates,
+    #     reward_func_name="all_reward",
+    #     seed=seed
+    # )
 
-    run_simulation(
-        node_count=node_count,
-        gamma=0.4,
-        rounds_count=rounds_count,
-        checkpoint_count=checkpoint_count,
-        num_candidates=num_candidates,
-        reward_func_name="all_reward",
-        seed=seed
-    )
-    run_simulation(
-        node_count=node_count,
-        gamma=0.5,
-        rounds_count=rounds_count,
-        checkpoint_count=checkpoint_count,
-        num_candidates=num_candidates,
-        reward_func_name="all_reward",
-        seed=seed
-    )
+    # run_simulation(
+    #     node_count=node_count,
+    #     gamma=0.4,
+    #     rounds_per_node=rounds_per_node,
+    #     checkpoint_count=checkpoint_count,
+    #     num_candidates=num_candidates,
+    #     reward_func_name="all_reward",
+    #     seed=seed
+    # )
+    # run_simulation(
+    #     node_count=node_count,
+    #     gamma=0.5,
+    #     rounds_per_node=rounds_per_node,
+    #     checkpoint_count=checkpoint_count,
+    #     num_candidates=num_candidates,
+    #     reward_func_name="all_reward",
+    #     seed=seed
+    # )
 
-    run_simulation(
-        node_count=node_count,
-        gamma=0.7,
-        rounds_count=rounds_count,
-        checkpoint_count=checkpoint_count,
-        num_candidates=num_candidates,
-        reward_func_name="all_reward",
-        seed=seed
-    )    
+    # run_simulation(
+    #     node_count=node_count,
+    #     gamma=0.7,
+    #     rounds_per_node=rounds_per_node,
+    #     checkpoint_count=checkpoint_count,
+    #     num_candidates=num_candidates,
+    #     reward_func_name="all_reward",
+    #     seed=seed
+    # )    
 
-    run_simulation(
-        node_count=node_count,
-        gamma=0.9,
-        rounds_count=rounds_count,
-        checkpoint_count=checkpoint_count,
-        num_candidates=num_candidates,
-        reward_func_name="all_reward",
-        seed=seed
-    )            
-    ## now repeat with double the nodes and double the rounds
-    run_simulation(
-        node_count=node_count*2,
-        gamma=0.05,
-        rounds_count=rounds_count*2,
-        checkpoint_count=checkpoint_count,
-        num_candidates=num_candidates,
-        reward_func_name="all_reward",
-        seed=seed
-    )
+    # run_simulation(
+    #     node_count=node_count,
+    #     gamma=0.9,
+    #     rounds_per_node=rounds_per_node,
+    #     checkpoint_count=checkpoint_count,
+    #     num_candidates=num_candidates,
+    #     reward_func_name="all_reward",
+    #     seed=seed
+    # )            
+    # ## now repeat with double the nodes and double the rounds
+    # run_simulation(
+    #     node_count=node_count*2,
+    #     gamma=0.05,
+    #     rounds_per_node=rounds_per_node*2,
+    #     checkpoint_count=checkpoint_count,
+    #     num_candidates=num_candidates,
+    #     reward_func_name="all_reward",
+    #     seed=seed
+    # )
 
 
-    run_simulation(
-        node_count=node_count*2,
-        gamma=0.1,
-        rounds_count=rounds_count*2,
-        checkpoint_count=checkpoint_count,
-        num_candidates=num_candidates,
-        reward_func_name="all_reward",
-        seed=seed
-    )
+    # run_simulation(
+    #     node_count=node_count*2,
+    #     gamma=0.1,
+    #     rounds_per_node=rounds_per_node*2,
+    #     checkpoint_count=checkpoint_count,
+    #     num_candidates=num_candidates,
+    #     reward_func_name="all_reward",
+    #     seed=seed
+    # )
 
-    run_simulation(
-        node_count=node_count*2,
-        gamma=0.2,
-        rounds_count=rounds_count*2,
-        checkpoint_count=checkpoint_count,
-        num_candidates=num_candidates,
-        reward_func_name="all_reward",
-        seed=seed
-    )
-    run_simulation(
-        node_count=node_count*2,
-        gamma=0.3,
-        rounds_count=rounds_count*2,
-        checkpoint_count=checkpoint_count,
-        num_candidates=num_candidates,
-        reward_func_name="all_reward",
-        seed=seed
-    )
+    # run_simulation(
+    #     node_count=node_count*2,
+    #     gamma=0.2,
+    #     rounds_per_node=rounds_per_node*2,
+    #     checkpoint_count=checkpoint_count,
+    #     num_candidates=num_candidates,
+    #     reward_func_name="all_reward",
+    #     seed=seed
+    # )
+    # run_simulation(
+    #     node_count=node_count*2,
+    #     gamma=0.3,
+    #     rounds_per_node=rounds_per_node*2,
+    #     checkpoint_count=checkpoint_count,
+    #     num_candidates=num_candidates,
+    #     reward_func_name="all_reward",
+    #     seed=seed
+    # )
 
-    run_simulation(
-        node_count=node_count*2,
-        gamma=0.4,
-        rounds_count=rounds_count*2,
-        checkpoint_count=checkpoint_count,
-        num_candidates=num_candidates,
-        reward_func_name="all_reward",
-        seed=seed
-    )
-    run_simulation(
-        node_count=node_count*2,
-        gamma=0.5,
-        rounds_count=rounds_count*2,
-        checkpoint_count=checkpoint_count,
-        num_candidates=num_candidates,
-        reward_func_name="all_reward",
-        seed=seed
-    )
+    # run_simulation(
+    #     node_count=node_count*2,
+    #     gamma=0.4,
+    #     rounds_per_node=rounds_per_node*2,
+    #     checkpoint_count=checkpoint_count,
+    #     num_candidates=num_candidates,
+    #     reward_func_name="all_reward",
+    #     seed=seed
+    # )
+    # run_simulation(
+    #     node_count=node_count*2,
+    #     gamma=0.5,
+    #     rounds_per_node=rounds_per_node*2,
+    #     checkpoint_count=checkpoint_count,
+    #     num_candidates=num_candidates,
+    #     reward_func_name="all_reward",
+    #     seed=seed
+    # )
 
-    run_simulation(
-        node_count=node_count*2,
-        gamma=0.7,
-        rounds_count=rounds_count*2,
-        checkpoint_count=checkpoint_count,
-        num_candidates=num_candidates,
-        reward_func_name="all_reward",
-        seed=seed
-    )    
+    # run_simulation(
+    #     node_count=node_count*2,
+    #     gamma=0.7,
+    #     rounds_per_node=rounds_per_node*2,
+    #     checkpoint_count=checkpoint_count,
+    #     num_candidates=num_candidates,
+    #     reward_func_name="all_reward",
+    #     seed=seed
+    # )    
 
-    run_simulation(
-        node_count=node_count*2,
-        gamma=0.9,
-        rounds_count=rounds_count*2,
-        checkpoint_count=checkpoint_count,
-        num_candidates=num_candidates,
-        reward_func_name="all_reward",
-        seed=seed
-    )       
+    # run_simulation(
+    #     node_count=node_count*2,
+    #     gamma=0.9,
+    #     rounds_per_node=rounds_per_node*2,
+    #     checkpoint_count=checkpoint_count,
+    #     num_candidates=num_candidates,
+    #     reward_func_name="all_reward",
+    #     seed=seed
+    # )       
 
-    # one cheeky one
+    # # one cheeky one
 
-    run_simulation(
-        node_count=node_count*5,
-        gamma=0.3,
-        rounds_count=rounds_count*5,
-        checkpoint_count=checkpoint_count,
-        num_candidates=num_candidates,
-        reward_func_name="all_reward",
-        seed=seed
-    )
+    # run_simulation(
+    #     node_count=node_count*5,
+    #     gamma=0.3,
+    #     rounds_per_node=rounds_per_node*5,
+    #     checkpoint_count=checkpoint_count,
+    #     num_candidates=num_candidates,
+    #     reward_func_name="all_reward",
+    #     seed=seed
+    # )
