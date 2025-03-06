@@ -34,6 +34,41 @@
       margin: 0 auto;
       background: #ffffff;
     }
+
+    #legendTooltip {
+      position: fixed;
+      z-index: 1000;
+      background: rgba(0, 0, 0, 0.8);
+      color: lightgreen;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 12px;
+      padding: 5px;
+      border-radius: 4px;
+      display: inline-block;
+      white-space: pre-wrap; /* Respect newlines but wrap if too long */
+      line-height: 1.2;
+      max-width: 300px;  /* Adjust max width as needed */
+      max-height: 150px; /* Adjust max height as needed */
+      overflow: auto;    /* Adds scrollbar if content exceeds max-height */
+    }
+
+    #hoverTooltip {
+      position: fixed;
+      z-index: 1000;
+      background: rgba(0,0,0,0.8);
+      color: lightgreen;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 12px;
+      padding: 5px;
+      border-radius: 4px;
+      display: none;
+      white-space: pre-wrap;
+      line-height: 1.2;
+    }
+
+
+
+
   </style>
 </head>
 <body>
@@ -55,11 +90,29 @@
   <div class="chart-container">
     <canvas id="compClusteringChart" width="600" height="300"></canvas>
   </div>
+
+<!-- Fixed legend container -->
+<div id="legendContainer" style="position: fixed; top: 10px; left: 10px; z-index: 1000; background: rgba(255,255,255,0.9); padding: 10px; border: 1px solid #ccc; border-radius: 4px;">
+  <strong>Legend</strong>
+  <ul id="legendList" style="list-style: none; margin: 0; padding: 0;"></ul>
+</div>
+
+<!-- Legend Tooltip (fixed, hidden by default) -->
+<div id="legendTooltip" style="position: fixed; left: 10px; bottom: 10px; z-index: 1000; background: rgba(0,0,0,0.8); color: lightgreen; font-family: Consolas, 'Courier New', monospace; font-size: 12px; padding: 5px; border-radius: 4px; display: none; white-space: pre;"></div>
+<!-- Tooltip for both legend and chart hover -->
+<div id="hoverTooltip" style="position: fixed; z-index: 1000; background: rgba(0,0,0,0.8); color: lightgreen; font-family: Consolas, 'Courier New', monospace; font-size: 12px; padding: 5px; border-radius: 4px; display: none; white-space: pre-wrap;"></div>
+
+
+
+  
   
   <script>
     // Global object to hold the comparison datasets.
     // It will be keyed by filename with value: array of { round, median, mean, clustering }
     let comparisonDatasets = {};
+    let comparisonParams = {};  // Keys: filename, Value: the params object from JSON.
+    let chartDataPoints = {};
+
 
     // Colors for the lines
     const colors = ["#e41a1c", "#377eb8", "#4daf4a", "#984ea3", "#ff7f00", "#a65628", "#f781bf"];
@@ -97,6 +150,10 @@
         throw new Error(`HTTP ${resp.status} - ${resp.statusText}`);
       }
       const data = await resp.json();
+
+      // Store the params for later use in the legend tooltip.
+      comparisonParams[filename] = data.params || {};
+  
       // Map each checkpoint to an object with round, median, mean, clustering.
       // If any attribute is missing, use 0.
       const arr = (data.checkpoints || []).map(cp => ({
@@ -119,6 +176,7 @@
           console.error("Error loading file", file, err);
         }
       }
+      updateLegend();
       drawComparisonCharts();
     }
 
@@ -127,6 +185,7 @@
       drawComparisonChart("compMedianChart", "median", "Median");
       drawComparisonChart("compMeanChart", "mean", "Mean");
       drawComparisonChart("compClusteringChart", "cluster_count", "Clustering");
+      addAllChartHoverListeners();
     }
 
     // Draw a comparison chart.
@@ -135,98 +194,185 @@
     function drawComparisonChart(canvasId, metric, title) {
       const canvas = document.getElementById(canvasId);
       if (!canvas) return;
-      const ctx = canvas.getContext('2d');
+      const ctx = canvas.getContext("2d");
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-      // Gather all rounds and metric values across all datasets.
+      
+      // Gather all rounds and metric values across datasets.
       let allRounds = [];
       let allMetricVals = [];
+      let datasetPoints = []; // Will store for each dataset: { file, points: [ { round, x, y, value } ] }
       for (const file in comparisonDatasets) {
-        const dataset = comparisonDatasets[file];
-        console.log(dataset[0]);
+        const dataset = comparisonDatasets[file].slice().sort((a, b) => a.round - b.round);
         dataset.forEach(dp => {
           allRounds.push(dp.round);
           allMetricVals.push(dp[metric]);
         });
       }
-      console.log(metric, allMetricVals);
       if (allRounds.length === 0) return;
-      const minRound = Math.min(...allRounds);
+      const minRound = 0;
       const maxRound = Math.max(...allRounds);
-      const minMetric = 0; // We'll force x-axis starting at 0.
+      const minMetric = 0;
       const maxMetric = Math.max(...allMetricVals);
-
-      // Set padding for axes.
-      const xPad = 60, yPad = 50;
+      
+      const xPad = 60, yPad = 60;
       const w = canvas.width - xPad * 2;
       const h = canvas.height - yPad * 2;
-
-      // Scaling functions: x = round, y = metric.
+      
       const xScale = r => xPad + ((r - minRound) / (maxRound - minRound)) * w;
       const yScale = m => yPad + h - ((m - minMetric) / (maxMetric - minMetric)) * h;
-
-      // Draw chart title.
+      
+      // Draw title.
       ctx.fillStyle = "#000";
       ctx.font = "bold 16px sans-serif";
       ctx.textAlign = "center";
-      ctx.fillText(title, canvas.width / 2, 20);
-
+      ctx.fillText(title, canvas.width / 2, 30);
+      
       // Draw axes.
       ctx.strokeStyle = "#000";
       ctx.lineWidth = 1;
       ctx.beginPath();
-      // x-axis
       ctx.moveTo(xPad, yPad + h);
       ctx.lineTo(xPad + w, yPad + h);
-      // y-axis
       ctx.moveTo(xPad, yPad);
       ctx.lineTo(xPad, yPad + h);
       ctx.stroke();
       ctx.closePath();
-
-      // Draw tick marks and labels for x-axis (Rounds).
+      
+      // X-axis ticks and labels.
       ctx.font = "12px sans-serif";
       ctx.textAlign = "center";
-      // Left tick at minRound:
       ctx.fillText(minRound, xPad, yPad + h + 20);
-      // Right tick at maxRound:
       ctx.fillText(maxRound, xPad + w, yPad + h + 20);
-      // Label x-axis:
-      ctx.fillText("Round", xPad + w / 2, yPad + h + 40);
-
-      // Draw tick marks and labels for y-axis (Metric).
+      ctx.fillText("Round", xPad + w/2, yPad + h + 40);
+      
+      // Y-axis ticks and labels.
       ctx.textAlign = "right";
-      ctx.fillText(minMetric.toFixed(2), xPad - 10, yPad + h + 4);
-      ctx.fillText(maxMetric.toFixed(2), xPad - 10, yPad + 10);
-      // Label y-axis:
+      ctx.fillText(minMetric.toFixed(2), xPad - 10, yPad + h + 5);
+      ctx.fillText(maxMetric.toFixed(2), xPad - 10, yPad + 15);
       ctx.save();
-      ctx.translate(xPad - 40, yPad + h / 2);
-      ctx.rotate(-Math.PI / 2);
+      ctx.translate(xPad - 40, yPad + h/2);
+      ctx.rotate(-Math.PI/2);
       ctx.textAlign = "center";
       ctx.fillText(metric.charAt(0).toUpperCase() + metric.slice(1), 0, 0);
       ctx.restore();
-
-      // For each dataset, plot a line.
+      
+      // For each dataset, plot a line and store its scaled data points.
       let colorIndex = 0;
+      let chartPoints = [];  // Array to store dataset points for this chart.
       for (const file in comparisonDatasets) {
-        const dataset = comparisonDatasets[file];
+        const dataset = comparisonDatasets[file].slice().sort((a, b) => a.round - b.round);
         ctx.strokeStyle = colors[colorIndex % colors.length];
         ctx.lineWidth = 2;
         ctx.beginPath();
-        // Sort dataset by round for consistency.
-        dataset.sort((a, b) => a.round - b.round);
-        // Move to first data point.
-        ctx.moveTo(xScale(dataset[0].round), yScale(dataset[0][metric]));
-        for (let i = 1; i < dataset.length; i++) {
-          ctx.lineTo(xScale(dataset[i].round), yScale(dataset[i][metric]));
+        let pointsArr = [];
+        for (let i = 0; i < dataset.length; i++) {
+          const x = xScale(dataset[i].round);
+          const y = yScale(dataset[i][metric]);
+          pointsArr.push({ round: dataset[i].round, x: x, y: y, value: dataset[i][metric] });
+          if (i === 0) {
+            ctx.moveTo(x, y);
+          } else {
+            ctx.lineTo(x, y);
+          }
         }
         ctx.stroke();
-        // Draw a legend entry.
-        ctx.fillStyle = ctx.strokeStyle;
-        ctx.fillText(file, xPad + 10, yPad + 20 + colorIndex * 15);
+        chartPoints.push({ file: file, color: colors[colorIndex % colors.length], points: pointsArr });
+        colorIndex++;
+      }
+      // Save the data points for hover detection.
+      chartDataPoints[canvasId] = chartPoints;
+      
+      // Optionally, add legend entries here if desired.
+    }
+    function addAllChartHoverListeners() {
+      addChartHoverListeners("compMedianChart");
+      addChartHoverListeners("compMeanChart");
+      addChartHoverListeners("compClusteringChart");
+    }
+
+    function updateLegend() {
+      const legendList = document.getElementById("legendList");
+      legendList.innerHTML = ""; // Clear previous entries.
+      let colorIndex = 0;
+      for (const file in comparisonDatasets) {
+        const li = document.createElement("li");
+        li.style.marginBottom = "4px";
+        
+        // Create a color box.
+        const colorBox = document.createElement("span");
+        colorBox.style.display = "inline-block";
+        colorBox.style.width = "12px";
+        colorBox.style.height = "12px";
+        colorBox.style.backgroundColor = colors[colorIndex % colors.length];
+        colorBox.style.marginRight = "6px";
+        li.appendChild(colorBox);
+        
+        // Append the file name.
+        li.appendChild(document.createTextNode(file));
+        
+        // Add hover events.
+        li.addEventListener("mouseenter", (e) => {
+          // Build a multi-line string from comparisonParams for this file.
+          const params = comparisonParams[file] || {};
+          let text = "";
+          for (const key in params) {
+            text += key.charAt(0).toUpperCase() + key.slice(1) + ": " + params[key] + "\n";
+          }
+          const tooltip = document.getElementById("hoverTooltip");
+          tooltip.textContent = text.trim();
+          tooltip.style.display = "block";
+          tooltip.style.left = e.clientX + "px";
+          tooltip.style.top = e.clientY + "px";
+        });
+        li.addEventListener("mousemove", (e) => {
+          const tooltip = document.getElementById("hoverTooltip");
+          tooltip.style.left = e.clientX + "px";
+          tooltip.style.top = e.clientY + "px";
+        });
+        li.addEventListener("mouseleave", () => {
+          document.getElementById("hoverTooltip").style.display = "none";
+        });
+        
+        legendList.appendChild(li);
         colorIndex++;
       }
     }
+    function addChartHoverListeners(canvasId) {
+      const canvas = document.getElementById(canvasId);
+      canvas.addEventListener("mousemove", (e) => {
+        const rect = canvas.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+        const threshold = 5; // pixels
+        let infoText = "";
+        // For each dataset in this canvas:
+        for (const dataset of (chartDataPoints[canvasId] || [])) {
+          // Check each point.
+          for (const pt of dataset.points) {
+            const dx = pt.x - mouseX;
+            const dy = pt.y - mouseY;
+            if (Math.sqrt(dx*dx + dy*dy) < threshold) {
+              infoText += dataset.file + " - Round: " + pt.round + ", " + pt.value.toFixed(2) + "\n";
+              break; // Show one point per dataset.
+            }
+          }
+        }
+        const tooltip = document.getElementById("hoverTooltip");
+        if (infoText) {
+          tooltip.textContent = infoText.trim();
+          tooltip.style.display = "block";
+          tooltip.style.left = e.clientX + "px";
+          tooltip.style.top = e.clientY + "px";
+        } else {
+          tooltip.style.display = "none";
+        }
+      });
+      canvas.addEventListener("mouseleave", () => {
+        document.getElementById("hoverTooltip").style.display = "none";
+      });
+    }
+
+
 
     // =========================== Event Listener for "Compare" Button ===========================
     document.getElementById('compareBtn').addEventListener('click', () => {
