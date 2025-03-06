@@ -26,6 +26,12 @@ class Space(ABC):
     def distance(self, p1, p2):
         pass
 
+    def get_area(self):
+        pass
+
+    def get_max_dist(self):
+        pass
+
 class SphericalSpace(Space):
     """
     Sample points on (or near) the unit sphere.
@@ -49,6 +55,11 @@ class SphericalSpace(Space):
         # numerical safety clamp
         dotp = max(-1.0, min(1.0, dotp))
         return math.acos(dotp)
+    
+    def get_area(self):
+        return 4*np.pi
+    def get_max_dist(self):
+        return 2*np.pi
     
 def init_distance_matrix(positions, space):
     """
@@ -137,7 +148,7 @@ def prop_latency_reward(dist_matrix, node_thresh):
         for j in range(n):
             if j==i:
                 continue
-        tot += 1/dist_matrix[i][j]
+            tot += 1/dist_matrix[i][j]
         for j in range(n):
             if j==i:
                 continue
