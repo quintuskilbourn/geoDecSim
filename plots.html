@@ -103,7 +103,7 @@
         round: cp.round_idx,
         median: cp.median_distance != null ? cp.median_distance : 0,
         mean: cp.mean_distance != null ? cp.mean_distance : 0,
-        clustering: cp.clustering != null ? cp.clustering : 0
+        cluster_count: cp.cluster_count != null ? cp.cluster_count : 0
       }));
       return arr;
     }
@@ -126,7 +126,7 @@
     function drawComparisonCharts() {
       drawComparisonChart("compMedianChart", "median", "Median");
       drawComparisonChart("compMeanChart", "mean", "Mean");
-      drawComparisonChart("compClusteringChart", "clustering", "Clustering");
+      drawComparisonChart("compClusteringChart", "cluster_count", "Clustering");
     }
 
     // Draw a comparison chart.
@@ -143,11 +143,13 @@
       let allMetricVals = [];
       for (const file in comparisonDatasets) {
         const dataset = comparisonDatasets[file];
+        console.log(dataset[0]);
         dataset.forEach(dp => {
           allRounds.push(dp.round);
           allMetricVals.push(dp[metric]);
         });
       }
+      console.log(metric, allMetricVals);
       if (allRounds.length === 0) return;
       const minRound = Math.min(...allRounds);
       const maxRound = Math.max(...allRounds);

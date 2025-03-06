@@ -5,6 +5,9 @@ from abc import ABC, abstractmethod
 import time
 from pathlib import Path
 import os
+from sklearn.cluster import DBSCAN
+import numpy as np
+
 
 class Space(ABC):
     """
@@ -116,6 +119,24 @@ def fixed_reward(dist_matrix, node_thresh):
         for j in range(n):
             if dist_matrix[i][j] <= radius:
                 scores[j] += reward/cnt
+    return scores, radii
+
+def prop_latency_reward(dist_matrix, node_thresh):
+
+    #pretty sure this doesn't do anything 
+    reward=node_thresh
+    n = len(dist_matrix)
+    scores = [0]*n
+    radii = [0]*n
+    
+    # For each node i, find the gamma-th closest node distance
+    # Then increment +1 for all nodes j within that radius.
+    for i in range(n):
+        tot = 1/sum(dist_matrix[i])
+        for j in range(n):
+            if j==i:
+                continue
+            scores[j] += reward*(1/dist_matrix[i][j])/tot
     return scores, radii
 
 def dropoff_reward(dist_matrix, node_thresh):
@@ -259,10 +280,14 @@ def med_mean_distance(dist_matrix):
         return median(distances), mean(distances)
     return 0.0,0.0
 
+import numpy as np
+import math
+
+
 def run_simulation(node_count=10, gamma=0.3, rounds_per_node=3, checkpoint_count=100, num_candidates=50, reward_func_name="all_reward",seed=0,experiment_name="general_data"):
     #if no seed provided, randomise
     if not seed:
-        seed=(time.time()*1000)%10000
+        seed = round((time.time()*1000000)%1000000)
     
     random.seed(seed)
     space = SphericalSpace()  # or your chosen space
@@ -274,21 +299,33 @@ def run_simulation(node_count=10, gamma=0.3, rounds_per_node=3, checkpoint_count
     positions = [space.sample_point() for _ in range(node_count)]
     dist_matrix = init_distance_matrix(positions, space)
     node_thresh = int(node_count*gamma)
+    db = DBSCAN(eps=0.2, min_samples=10, metric='precomputed')
+            
     reward_funcs = {
         "all_reward": all_reward,
         "fixed_reward":fixed_reward,
         "dropoff_reward":dropoff_reward,
-        "declining_reward":declining_reward
+        "declining_reward":declining_reward,
+        "prop_latency_reward":prop_latency_reward
     }
     reward_func = reward_funcs[reward_func_name]
-    output_json_file= experiment_name+"/"+reward_func_name+"_"+str(rounds_per_node)+"_"+str(node_count)+"_"+str(round(gamma,2))+"_"+str(seed)+".json"
+    output_json_file= experiment_name+"/"+reward_func_name+"_"+str(rounds_per_node)+"_"+str(node_count)+"_"+str(round(gamma,3))+"_"+str(round(seed))+".json"
 
+    params = {
+        "node_count": node_count,
+        "gamma": gamma,
+        "rounds_per_node":rounds_per_node,
+        "reward_function":reward_func_name,
+        "seed":seed
+    }
 
     def record_checkpoint(round_idx):
             # compute scores for all nodes
             scores, radii = compute_all_scores(dist_matrix, node_thresh, reward_func)
             # store them
             median_distance,mean_distance  = med_mean_distance(dist_matrix)
+            clusters = db.fit_predict(dist_matrix)
+            unique_clusters = np.unique(clusters)
             cp = {
                 "round_idx": round_idx,
                 "positions": [list(p) for p in positions],  # convert tuples to lists
@@ -296,7 +333,9 @@ def run_simulation(node_count=10, gamma=0.3, rounds_per_node=3, checkpoint_count
                 "radii": radii,
                 "median_distance":median_distance,
                 "mean_distance":mean_distance,
-                "clustering": 0
+                "clustering": clusters.tolist(),
+                "cluster_count": len(unique_clusters) if -1 not in unique_clusters else len(unique_clusters) -1
+
             }
             all_checkpoints.append(cp)
 
@@ -325,11 +364,13 @@ def run_simulation(node_count=10, gamma=0.3, rounds_per_node=3, checkpoint_count
             print(f"Round {round_idx} done")
 
         output_data = {
+            "params": params,
             "checkpoints": all_checkpoints,
             "node_thresh": node_thresh
         }
 
     Path(__location__+"/"+experiment_name).mkdir(parents=True, exist_ok=True)
+    
     with open(__location__ + "/" + output_json_file, "w") as f:
         json.dump(output_data, f, indent=2)
     
@@ -348,183 +389,23 @@ def run_simulation(node_count=10, gamma=0.3, rounds_per_node=3, checkpoint_count
     # positions now final
 
 if __name__ == "__main__":
-    node_count=250
-    # gamma=1/5
-    rounds_per_node=12
+    node_count=150
+    gamma=0.15
+    rounds_per_node=24
     checkpoint_count=50
-    num_candidates=30
-    seed=7
-    experiment_name="general_data"
+    num_candidates=50
+    seed=774048
+    experiment_name="test_clustering"
 
-    #demo
-    run_simulation()
-    
-    # run_simulation(
-    #     node_count=node_count,
-    #     gamma=0.05,
-    #     rounds_per_node=rounds_per_node,
-    #     checkpoint_count=checkpoint_count,
-    #     num_candidates=num_candidates,
-    #     reward_func_name="all_reward",
-    #     seed=seed
-    # )
+    for i in range(1):
+        run_simulation(
+            node_count=node_count,
+            gamma=gamma*(int(i/2)+1),
+            rounds_per_node=rounds_per_node,
+            checkpoint_count=checkpoint_count,
+            num_candidates=num_candidates,
+            reward_func_name="prop_latency_reward" if i%2 else "all_reward",
+            seed=seed,
+            experiment_name=experiment_name
+        )
 
-
-    # run_simulation(
-    #     node_count=node_count,
-    #     gamma=0.1,
-    #     rounds_per_node=rounds_per_node,
-    #     checkpoint_count=checkpoint_count,
-    #     num_candidates=num_candidates,
-    #     reward_func_name="all_reward",
-    #     seed=seed
-    # )
-
-    # run_simulation(
-    #     node_count=node_count,
-    #     gamma=0.2,
-    #     rounds_per_node=rounds_per_node,
-    #     checkpoint_count=checkpoint_count,
-    #     num_candidates=num_candidates,
-    #     reward_func_name="all_reward",
-    #     seed=seed
-    # )
-    # run_simulation(
-    #     node_count=node_count,
-    #     gamma=0.3,
-    #     rounds_per_node=rounds_per_node,
-    #     checkpoint_count=checkpoint_count,
-    #     num_candidates=num_candidates,
-    #     reward_func_name="all_reward",
-    #     seed=seed
-    # )
-
-    # run_simulation(
-    #     node_count=node_count,
-    #     gamma=0.4,
-    #     rounds_per_node=rounds_per_node,
-    #     checkpoint_count=checkpoint_count,
-    #     num_candidates=num_candidates,
-    #     reward_func_name="all_reward",
-    #     seed=seed
-    # )
-    # run_simulation(
-    #     node_count=node_count,
-    #     gamma=0.5,
-    #     rounds_per_node=rounds_per_node,
-    #     checkpoint_count=checkpoint_count,
-    #     num_candidates=num_candidates,
-    #     reward_func_name="all_reward",
-    #     seed=seed
-    # )
-
-    # run_simulation(
-    #     node_count=node_count,
-    #     gamma=0.7,
-    #     rounds_per_node=rounds_per_node,
-    #     checkpoint_count=checkpoint_count,
-    #     num_candidates=num_candidates,
-    #     reward_func_name="all_reward",
-    #     seed=seed
-    # )    
-
-    # run_simulation(
-    #     node_count=node_count,
-    #     gamma=0.9,
-    #     rounds_per_node=rounds_per_node,
-    #     checkpoint_count=checkpoint_count,
-    #     num_candidates=num_candidates,
-    #     reward_func_name="all_reward",
-    #     seed=seed
-    # )            
-    # ## now repeat with double the nodes and double the rounds
-    # run_simulation(
-    #     node_count=node_count*2,
-    #     gamma=0.05,
-    #     rounds_per_node=rounds_per_node*2,
-    #     checkpoint_count=checkpoint_count,
-    #     num_candidates=num_candidates,
-    #     reward_func_name="all_reward",
-    #     seed=seed
-    # )
-
-
-    # run_simulation(
-    #     node_count=node_count*2,
-    #     gamma=0.1,
-    #     rounds_per_node=rounds_per_node*2,
-    #     checkpoint_count=checkpoint_count,
-    #     num_candidates=num_candidates,
-    #     reward_func_name="all_reward",
-    #     seed=seed
-    # )
-
-    # run_simulation(
-    #     node_count=node_count*2,
-    #     gamma=0.2,
-    #     rounds_per_node=rounds_per_node*2,
-    #     checkpoint_count=checkpoint_count,
-    #     num_candidates=num_candidates,
-    #     reward_func_name="all_reward",
-    #     seed=seed
-    # )
-    # run_simulation(
-    #     node_count=node_count*2,
-    #     gamma=0.3,
-    #     rounds_per_node=rounds_per_node*2,
-    #     checkpoint_count=checkpoint_count,
-    #     num_candidates=num_candidates,
-    #     reward_func_name="all_reward",
-    #     seed=seed
-    # )
-
-    # run_simulation(
-    #     node_count=node_count*2,
-    #     gamma=0.4,
-    #     rounds_per_node=rounds_per_node*2,
-    #     checkpoint_count=checkpoint_count,
-    #     num_candidates=num_candidates,
-    #     reward_func_name="all_reward",
-    #     seed=seed
-    # )
-    # run_simulation(
-    #     node_count=node_count*2,
-    #     gamma=0.5,
-    #     rounds_per_node=rounds_per_node*2,
-    #     checkpoint_count=checkpoint_count,
-    #     num_candidates=num_candidates,
-    #     reward_func_name="all_reward",
-    #     seed=seed
-    # )
-
-    # run_simulation(
-    #     node_count=node_count*2,
-    #     gamma=0.7,
-    #     rounds_per_node=rounds_per_node*2,
-    #     checkpoint_count=checkpoint_count,
-    #     num_candidates=num_candidates,
-    #     reward_func_name="all_reward",
-    #     seed=seed
-    # )    
-
-    # run_simulation(
-    #     node_count=node_count*2,
-    #     gamma=0.9,
-    #     rounds_per_node=rounds_per_node*2,
-    #     checkpoint_count=checkpoint_count,
-    #     num_candidates=num_candidates,
-    #     reward_func_name="all_reward",
-    #     seed=seed
-    # )       
-
-    # # one cheeky one
-
-    # run_simulation(
-    #     node_count=node_count*5,
-    #     gamma=0.3,
-    #     rounds_per_node=rounds_per_node*5,
-    #     checkpoint_count=checkpoint_count,
-    #     num_candidates=num_candidates,
-    #     reward_func_name="all_reward",
-    #     seed=seed
-    # )
