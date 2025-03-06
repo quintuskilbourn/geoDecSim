@@ -37,6 +37,21 @@
       z-index: 20;
     }
     canvas { display: block; }
+
+    #paramsDisplay {
+      position: absolute;
+      bottom: 20px;
+      left: 20px;
+      z-index: 10;
+      color: lightgreen;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 18px;
+      background: rgba(0, 0, 0, 0.7);
+      padding: 5px;
+      border-radius: 4px;
+      white-space: pre;
+    }
+
   </style>
 </head>
 <body>
@@ -45,6 +60,8 @@
     <label for="fileSelector">Data File:</label>
     <select id="fileSelector"></select>
     <button id="loadFileBtn">Load File</button>
+    <br>
+    <button id="goToPlotsBtn" onclick="window.location.href='plots.html'">Compare Charts</button>
     <br><br>
     <!-- Round controls -->
     <div id="roundInfo">
@@ -72,6 +89,7 @@
     <canvas id="clusterChart" width="300" height="150"></canvas>
   </div>
   
+  <div id="paramsDisplay"></div>
 
   <!-- Import map for Three.js -->
   <script type="importmap">
@@ -176,11 +194,25 @@
         goToCheckpoint(0, true);
         drawMedianDistanceChart();
         drawMeanDistanceChart();
-        drawClusterCountChart();v
+        drawClusterCountChart();
+        displayParams(data.params, data.node_thresh);
       } catch (err) {
         console.error("Failed to load simulation data from", jsonFile, err);
       }
     }
+    function displayParams(params, node_thresh) {
+      const displayDiv = document.getElementById("paramsDisplay");
+      if (!params) return;
+      let text = "";
+      text += "Node Count: " + params.node_count + "\n";
+      text += "Gamma: " + params.gamma + "\n";
+      text += "Rounds per Node: " + params.rounds_per_node + "\n";
+      text += "Reward Function: " + params.reward_function + "\n";
+      text += "Seed: " + params.seed + "\n";
+      text += "Node Threshold: " + node_thresh;
+      displayDiv.textContent = text;
+    }
+
 
     // ========= Scene Setup =========
     function initScene() {
