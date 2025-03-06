@@ -72,6 +72,9 @@
         <input type="range" id="speedRange" min="0.5" max="5" step="0.5" value="1">
         <span id="speedLabel">1</span> rounds/sec
       </label>
+      <label for="roundInput">Checkpoint:</label>
+      <input id="roundInput" type="number" min="0" value="0">
+      <button id="goToRoundBtn">Go</button>  
       <div>Current Round: <span id="roundIdxDisplay"></span></div>
     </div>
   </div>
@@ -536,6 +539,45 @@
       ctx.stroke();
       ctx.closePath();
     }
+    // Add this near your other event listeners in index.html:
+    document.getElementById('goToRoundBtn').addEventListener('click', () => {
+      const round = parseInt(document.getElementById('roundInput').value, 10);
+      if (!isNaN(round)) {
+        goToCheckpoint(round);
+      }
+    });
+
+    // Utility: parse query parameters from URL
+    function getQueryParams() {
+      const params = {};
+      window.location.search.substring(1).split("&").forEach(part => {
+        if (part) {
+          const [key, value] = part.split("=");
+          params[decodeURIComponent(key)] = decodeURIComponent(value);
+        }
+      });
+      return params;
+    }
+
+    // On page load, if URL parameters exist, load them:
+    window.addEventListener("load", () => {
+      const params = getQueryParams();
+      if (params.file) {
+        // Set the file selector to the given file and load it.
+        const sel = document.getElementById('fileSelector');
+        sel.value = params.file;
+        loadSimulationData(params.file).then(() => {
+          if (params.round) {
+            const round = parseInt(params.round, 10);
+            if (!isNaN(round)) {
+              goToCheckpoint(round);
+              document.getElementById('roundInput').value = round;
+            }
+          }
+        });
+      }
+    });
+
 
     // ========= Mouse Handling: Hover for Tooltip and Cluster Highlight =========
     function onMouseMove(event) {

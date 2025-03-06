@@ -178,7 +178,40 @@
       }
       updateLegend();
       drawComparisonCharts();
+      addChartClickListeners("compMedianChart");
+      addChartClickListeners("compMeanChart");
+      addChartClickListeners("compClusteringChart");
     }
+
+
+    // Function to add click listeners to a given canvas.
+    function addChartClickListeners(canvasId) {
+      const canvas = document.getElementById(canvasId);
+      canvas.addEventListener("click", (e) => {
+        const rect = canvas.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+        const threshold = 5; // in pixels – adjust if needed
+        // For each dataset plotted on this chart:
+        const datasets = chartDataPoints[canvasId] || [];
+        for (const dataset of datasets) {
+          for (const pt of dataset.points) {
+            const dx = pt.x - mouseX;
+            const dy = pt.y - mouseY;
+            if (Math.sqrt(dx*dx + dy*dy) < threshold) {
+              // Open index.html in a new tab with query parameters for file and round.
+              const url = `index.html?file=${encodeURIComponent(dataset.file)}&round=${pt.round}`;
+              window.open(url, "_blank");
+              return;
+            }
+          }
+        }
+      });
+      canvas.addEventListener("mouseleave", () => {
+        // Optionally hide any chart hover tooltip here.
+      });
+    }
+
 
     // Draw all three charts.
     function drawComparisonCharts() {
