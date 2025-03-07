@@ -37,7 +37,6 @@
       z-index: 20;
     }
     canvas { display: block; }
-
     #paramsDisplay {
       position: absolute;
       bottom: 20px;
@@ -51,7 +50,17 @@
       border-radius: 4px;
       white-space: pre;
     }
-
+    /* Force the distanceChart canvas to a fixed size and position beneath the other charts */
+    #distanceChart {
+      position: absolute;
+      right: 10px;
+      top: 520px;
+      width: 300px;
+      height: 150px;
+      background: #fff;
+      border: 1px solid #ccc;
+      z-index: 10;
+    }
   </style>
 </head>
 <body>
@@ -69,7 +78,7 @@
       <button id="nextRound">Next Round</button>
       <label><input type="checkbox" id="autoplayToggle"> Auto-Play</label>
       <label>Speed:
-        <input type="range" id="speedRange" min="0.5" max="5" step="0.5" value="1">
+        <input id="speedRange" type="range" min="0.5" max="5" step="0.5" value="1">
         <span id="speedLabel">1</span> rounds/sec
       </label>
       <label for="roundInput">Checkpoint:</label>
@@ -81,7 +90,7 @@
 
   <div id="tooltip"></div>
 
-  <!-- Two charts: one for median, one for mean distances -->
+  <!-- Three charts: median, mean, and clusters -->
   <div class="chart-container" style="top: 10px;">
     <canvas id="medianChart" width="300" height="150"></canvas>
   </div>
@@ -92,6 +101,9 @@
     <canvas id="clusterChart" width="300" height="150"></canvas>
   </div>
   
+  <!-- Bar chart for distance distribution -->
+  <canvas id="distanceChart" width="300" height="150"></canvas>
+
   <div id="paramsDisplay"></div>
 
   <!-- Import map for Three.js -->
@@ -103,6 +115,9 @@
     }
   }
   </script>
+
+  <!-- Load Chart.js from a CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
   <!-- Main Script -->
   <script type="module">
@@ -118,7 +133,7 @@
     let checkpoints = [];
     let gamma = 3;
     let currentCheckpointIdx = 0;
-    let distanceData = [];  // Array of { round, median, mean }
+    let distanceData = [];  // Array of { round, median, mean, cluster_count, distances }
     let autoPlayInterval = null;
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
@@ -135,12 +150,14 @@
       0x7f7f7f, // gray
       0x17becf  // cyan
     ];
+    // Global variable for Chart.js bar chart instance.
+    let distanceChartInstance = null;
 
     // ========= Initialization =========
     initScene();
     animate();
 
-    // Load file list and populate selector.
+    // Load file list from "files.json" and populate selector.
     loadFileList('files.json')
       .then(fileList => populateFileSelector(fileList))
       .catch(err => console.error("Could not load file list:", err));
@@ -155,6 +172,12 @@
     document.getElementById('prevRound').addEventListener('click', () => goToCheckpoint(currentCheckpointIdx - 1));
     document.getElementById('autoplayToggle').addEventListener('change', onAutoplayChange);
     document.getElementById('speedRange').addEventListener('input', onSpeedChange);
+    document.getElementById('goToRoundBtn').addEventListener('click', () => {
+      const round = parseInt(document.getElementById('roundInput').value, 10);
+      if (!isNaN(round)) {
+        goToCheckpoint(round);
+      }
+    });
 
     // ========= File List Functions =========
     async function loadFileList(fileListJsonPath) {
@@ -188,8 +211,10 @@
         const data = await resp.json();
         checkpoints = data.checkpoints || [];
         gamma = data.gamma || gamma;
+        console.log("loaded file, not yet parsed.");
         distanceData = checkpoints.map(cp => ({
           round: cp.round_idx,
+          distance_freq: cp.distances,
           median: cp.median_distance != null ? cp.median_distance : 0,
           mean: cp.mean_distance != null ? cp.mean_distance : 0,
           cluster_count: cp.cluster_count != null ? cp.cluster_count : 0
@@ -198,6 +223,7 @@
         drawMedianDistanceChart();
         drawMeanDistanceChart();
         drawClusterCountChart();
+        createDistanceBarChart();
         displayParams(data.params, data.node_thresh);
       } catch (err) {
         console.error("Failed to load simulation data from", jsonFile, err);
@@ -216,7 +242,6 @@
       displayDiv.textContent = text;
     }
 
-
     // ========= Scene Setup =========
     function initScene() {
       scene = new THREE.Scene();
@@ -230,7 +255,7 @@
       controls.dampingFactor = 0.1;
       controls.enablePan = false;
 
-      // We still create a heatmap texture but you can comment updateHeatmap() if not needed.
+      // Create a heatmap texture (even if updateHeatmap() is commented out)
       heatmapTexture = new THREE.CanvasTexture(buildHeatmapCanvas());
       heatmapTexture.needsUpdate = true;
       const sphereGeom = new THREE.SphereGeometry(sphereRadius, 64, 32);
@@ -271,7 +296,7 @@
       nodeSpheres.forEach(mesh => scene.remove(mesh));
       nodeSpheres = [];
 
-      // Build nodes from checkpoint data. Use cp.radii and cp.clustering.
+      // Build nodes from checkpoint data using precomputed radii and clustering info.
       nodes = cp.positions.map((posArr, i) => {
         const pos = new THREE.Vector3(posArr[0], posArr[1], posArr[2]);
         const score = cp.scores ? cp.scores[i] : 0;
@@ -292,7 +317,6 @@
         const frac = (maxScore === 0) ? 0 : n.score / maxScore;
         const nodeSize = 0.02 + 0.08 * frac;
         const geom = new THREE.SphereGeometry(nodeSize, 16, 16);
-        // Use the node's assigned cluster color.
         const mat = new THREE.MeshBasicMaterial({ color: n.color });
         const mesh = new THREE.Mesh(geom, mat);
         mesh.position.copy(n.position);
@@ -301,13 +325,68 @@
         n.mesh = mesh;
       });
 
-      // (Optional) update heatmap if desired:
+      // (Optional) update heatmap if desired.
       // updateHeatmap();
 
+      // Create the bar chart for distance distribution.
+      try {
+        var distances = cp.distances;
+        var labels = [];
+        var dataArr = [];
+        for (var bucket = 0; bucket < 100; bucket++) {
+          labels.push(bucket.toString());
+          dataArr.push(distances[bucket] !== undefined ? distances[bucket] : 0);
+        }
+        if (distanceChartInstance) {
+          distanceChartInstance.destroy();
+        }
+        var ctx = document.getElementById('distanceChart').getContext('2d');
+        distanceChartInstance = new Chart(ctx, {
+          type: 'bar',
+          data: {
+            labels: labels,
+            datasets: [{
+              label: 'Frequency',
+              data: dataArr,
+              backgroundColor: 'rgba(54, 162, 235, 0.2)',
+              borderColor: 'rgba(54, 162, 235, 1)',
+              borderWidth: 1
+            }]
+          },
+          options: {
+            responsive: false,
+            maintainAspectRatio: false,
+            animation: false,
+            plugins: {
+              title: {
+                display: true,
+                text: 'Distance Distribution for Round ' + cp.round_idx
+              }
+            },
+            scales: {
+              x: {
+                title: {
+                  display: true,
+                  text: 'Distance Bucket'
+                }
+              },
+              y: {
+                title: {
+                  display: true,
+                  text: 'Frequency'
+                },
+                beginAtZero: true
+              }
+            }
+          }
+        });
+      } catch(e) {
+        console.error("couldn't load bar chart", e);
+      }
       console.log(`Switched to checkpoint #${currentCheckpointIdx}, round ${cp.round_idx}.`);
     }
 
-    // (Optional) Update Heatmap – currently not used.
+    // ========= (Optional) Update Heatmap =========
     /*
     function updateHeatmap() {
       const canvas = heatmapTexture.image;
@@ -352,20 +431,16 @@
       const z = r * Math.sin(lat);
       return new THREE.Vector3(x, y, z);
     }
-    function geodesicDistance(v1, v2) {
-      const dot = v1.clone().normalize().dot(v2.clone().normalize());
-      return Math.acos(THREE.MathUtils.clamp(dot, -1, 1));
-    }
+
 
     // ========= Charts for Viz Tab =========
-    // For both charts, x axis = Distance, y axis = Rounds, with tick marks at 0 and max.
+    // For both charts, x axis = Rounds, y axis = Distance (median/mean) with tick marks.
     function drawMedianDistanceChart() {
       const canvas = document.getElementById('medianChart');
       if (!canvas) return;
       const ctx = canvas.getContext('2d');
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       if (distanceData.length === 0) return;
-      // X axis: median distance, Y axis: rounds.
       const medVals = distanceData.map(d => d.median);
       const rounds = distanceData.map(d => d.round);
       const minDist = 0;
@@ -374,9 +449,9 @@
       const maxRound = Math.max(...rounds);
       const xPad = 50, yPad = 40;
       const w = canvas.width - xPad * 2, h = canvas.height - yPad * 2;
+      // x: rounds, y: distance
       const xScale = r => xPad + ((r - minRound) / (maxRound - minRound)) * w;
-      const yScale = r => yPad + h - ((r - minDist) / (maxDist - minDist)) * h;
-      // Draw title and axes
+      const yScale = d => yPad + h - ((d - minDist) / (maxDist - minDist)) * h;
       ctx.fillStyle = "#000";
       ctx.font = "bold 14px sans-serif";
       ctx.textAlign = "center";
@@ -388,23 +463,22 @@
       ctx.lineTo(xPad, yPad + h);
       ctx.stroke();
       ctx.closePath();
-      // Draw tick marks and labels for x axis.
+      // X-axis ticks (Rounds)
       ctx.font = "12px sans-serif";
       ctx.textAlign = "center";
       ctx.fillText("0", xPad, yPad + h + 15);
-      ctx.fillText(maxRound.toFixed(2), xPad + w, yPad + h + 15);
+      ctx.fillText(maxRound, xPad + w, yPad + h + 15);
       ctx.fillText("Rounds", xPad + w/2, yPad + h + 30);
-      // Draw tick marks for y axis.
+      // Y-axis ticks (Distance)
       ctx.textAlign = "right";
       ctx.fillText("0", xPad - 10, yPad + h);
-      ctx.fillText(maxDist, xPad - 10, yPad + 10);
+      ctx.fillText(maxDist.toFixed(2), xPad - 10, yPad + 10);
       ctx.save();
       ctx.translate(15, yPad + h/2);
       ctx.rotate(-Math.PI / 2);
       ctx.textAlign = "center";
       ctx.fillText("Distance", 0, 0);
       ctx.restore();
-      // Plot the data line.
       ctx.beginPath();
       ctx.moveTo(xScale(rounds[0]), yScale(medVals[0]));
       for (let i = 1; i < distanceData.length; i++) {
@@ -428,7 +502,7 @@
       const xPad = 50, yPad = 40;
       const w = canvas.width - xPad * 2, h = canvas.height - yPad * 2;
       const xScale = r => xPad + ((r - minRound) / (maxRound - minRound)) * w;
-      const yScale = r => yPad + h - ((r - minDist) / (maxDist - minDist)) * h;
+      const yScale = d => yPad + h - ((d - minDist) / (maxDist - minDist)) * h;
       ctx.fillStyle = "#000";
       ctx.font = "bold 14px sans-serif";
       ctx.textAlign = "center";
@@ -452,7 +526,7 @@
       ctx.translate(15, yPad + h/2);
       ctx.rotate(-Math.PI / 2);
       ctx.textAlign = "center";
-      ctx.fillText("Ditance", 0, 0);
+      ctx.fillText("Distance", 0, 0);
       ctx.restore();
       ctx.beginPath();
       ctx.moveTo(xScale(rounds[0]), yScale(meanVals[0]));
@@ -462,75 +536,48 @@
       ctx.stroke();
       ctx.closePath();
     }
-
     function drawClusterCountChart() {
       const canvas = document.getElementById('clusterChart');
       if (!canvas) return;
       const ctx = canvas.getContext('2d');
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      
       if (distanceData.length === 0) return;
-      
-      // Extract round and cluster_count values from the distanceData array.
       const rounds = distanceData.map(d => d.round);
       const clusters = distanceData.map(d => d.cluster_count);
-      
-      // Force the axes to start at 0.
       const minRound = 0;
       const maxRound = Math.max(...rounds);
       const minCluster = 0;
       const maxCluster = Math.max(...clusters);
-      
-      // Define padding for the chart.
       const xPad = 50, yPad = 40;
       const w = canvas.width - xPad * 2;
       const h = canvas.height - yPad * 2;
-      
-      // Scaling functions:
-      // x-scale: maps rounds to horizontal pixel positions.
       const xScale = r => xPad + ((r - minRound) / (maxRound - minRound)) * w;
-      // y-scale: maps cluster_count to vertical pixel positions (invert so higher values are higher up).
       const yScale = c => yPad + h - ((c - minCluster) / (maxCluster - minCluster)) * h;
-      
-      // Draw chart title.
       ctx.fillStyle = "#000";
       ctx.font = "bold 14px sans-serif";
       ctx.textAlign = "center";
       ctx.fillText("#Clusters", canvas.width / 2, 20);
-      
-      // Draw x-axis and y-axis.
-      ctx.strokeStyle = "#000";
-      ctx.lineWidth = 1;
       ctx.beginPath();
-      // x-axis.
       ctx.moveTo(xPad, yPad + h);
       ctx.lineTo(xPad + w, yPad + h);
-      // y-axis.
       ctx.moveTo(xPad, yPad);
       ctx.lineTo(xPad, yPad + h);
       ctx.stroke();
       ctx.closePath();
-      
-      // Draw tick marks and labels for x-axis (Rounds).
       ctx.font = "12px sans-serif";
       ctx.textAlign = "center";
       ctx.fillText("0", xPad, yPad + h + 15);
       ctx.fillText(maxRound, xPad + w, yPad + h + 15);
       ctx.fillText("Rounds", xPad + w / 2, yPad + h + 30);
-      
-      // Draw tick marks and labels for y-axis (#Clusters).
       ctx.textAlign = "right";
       ctx.fillText("0", xPad - 10, yPad + h + 5);
       ctx.fillText(maxCluster, xPad - 10, yPad + 10);
-      // Label y-axis.
       ctx.save();
       ctx.translate(xPad - 40, yPad + h / 2);
       ctx.rotate(-Math.PI / 2);
       ctx.textAlign = "center";
       ctx.fillText("#Clusters", 0, 0);
       ctx.restore();
-      
-      // Plot the data line.
       ctx.beginPath();
       ctx.moveTo(xScale(rounds[0]), yScale(clusters[0]));
       for (let i = 1; i < distanceData.length; i++) {
@@ -539,15 +586,8 @@
       ctx.stroke();
       ctx.closePath();
     }
-    // Add this near your other event listeners in index.html:
-    document.getElementById('goToRoundBtn').addEventListener('click', () => {
-      const round = parseInt(document.getElementById('roundInput').value, 10);
-      if (!isNaN(round)) {
-        goToCheckpoint(round);
-      }
-    });
 
-    // Utility: parse query parameters from URL
+    // ========= Query Parameters =========
     function getQueryParams() {
       const params = {};
       window.location.search.substring(1).split("&").forEach(part => {
@@ -558,12 +598,9 @@
       });
       return params;
     }
-
-    // On page load, if URL parameters exist, load them:
     window.addEventListener("load", () => {
       const params = getQueryParams();
       if (params.file) {
-        // Set the file selector to the given file and load it.
         const sel = document.getElementById('fileSelector');
         sel.value = params.file;
         loadSimulationData(params.file).then(() => {
@@ -577,7 +614,6 @@
         });
       }
     });
-
 
     // ========= Mouse Handling: Hover for Tooltip and Cluster Highlight =========
     function onMouseMove(event) {
@@ -608,11 +644,11 @@
       tooltip.textContent = `Score: ${nodeObj.score}`;
     }
     function highlightRadiusOfInfluence(hovered) {
-      const factor = 1.0; // You can adjust this factor if needed.
+      const factor = 1.0;
       nodes.forEach(n => {
         const d = geodesicDistance(hovered.position, n.position);
         if (d <= hovered.radius * factor) {
-          n.mesh.material.color.set(0x00ff00);  // Highlight color: green.
+          n.mesh.material.color.set(0x00ff00);
         } else {
           n.mesh.material.color.set(n.color);
         }
@@ -658,6 +694,73 @@
       controls.update();
       renderer.render(scene, camera);
     }
+
+    // ========= Utility Functions =========
+    function geodesicDistance(v1, v2) {
+      const dot = v1.clone().normalize().dot(v2.clone().normalize());
+      return Math.acos(THREE.MathUtils.clamp(dot, -1, 1));
+    }
+
+    // ========= Create Distance Bar Chart =========
+    function createDistanceBarChart() {
+      try {
+        var cp = checkpoints[currentCheckpointIdx];
+        var distances = cp.distances;
+        var labels = [];
+        var dataArr = [];
+        for (var bucket = 0; bucket < 100; bucket++) {
+          labels.push(bucket.toString());
+          dataArr.push(distances[bucket] !== undefined ? distances[bucket] : 0);
+        }
+        if (distanceChartInstance) {
+          distanceChartInstance.destroy();
+        }
+        var ctx = document.getElementById('distanceChart').getContext('2d');
+        distanceChartInstance = new Chart(ctx, {
+          type: 'bar',
+          data: {
+            labels: labels,
+            datasets: [{
+              label: 'Frequency',
+              data: dataArr,
+              backgroundColor: 'rgba(54, 162, 235, 0.2)',
+              borderColor: 'rgba(54, 162, 235, 1)',
+              borderWidth: 1
+            }]
+          },
+          options: {
+            responsive: false,
+            maintainAspectRatio: false,
+            animation: false,
+            plugins: {
+              title: {
+                display: true,
+                text: 'Distance Distribution for Round ' + cp.round_idx
+              }
+            },
+            scales: {
+              x: {
+                title: {
+                  display: true,
+                  text: 'Distance Bucket'
+                }
+              },
+              y: {
+                title: {
+                  display: true,
+                  text: 'Frequency'
+                },
+                beginAtZero: true
+              }
+            }
+          }
+        });
+      } catch(e) {
+        console.error("couldn't load bar chart", e);
+      }
+    }
+
+   
   </script>
 </body>
 </html>

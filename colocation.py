@@ -299,10 +299,10 @@ def med_mean_distance(dist_matrix):
 import numpy as np
 import math
 
-def count_distances(dist_matrix):
+def count_distances(dist_matrix, space):
 
     # Flatten the list and count frequencies
-    frequency_dict = Counter(x for row in dist_matrix for x in row)
+    frequency_dict = Counter(round(x*100/space.get_max_dist()) for row in dist_matrix for x in row)
     frequency_dict[0] -= len(dist_matrix) #remove the 0's on the diagonal
     divided_frequency = {key: value / 2 for key, value in frequency_dict.items()}
     return divided_frequency
@@ -344,7 +344,7 @@ def run_simulation(node_count=10, gamma=0.3, rounds_per_node=3, checkpoint_count
         "seed":seed
     }
 
-    def record_checkpoint(round_idx):
+    def record_checkpoint(round_idx, space):
         # compute scores for all nodes
         scores, radii = compute_all_scores(dist_matrix, node_thresh, reward_func)
         # store them
@@ -354,7 +354,7 @@ def run_simulation(node_count=10, gamma=0.3, rounds_per_node=3, checkpoint_count
         cp = {
             "round_idx": round_idx,
             "positions": [list(p) for p in positions],  # convert tuples to lists
-            "distances": count_distances(dist_matrix),
+            "distances": count_distances(dist_matrix, space),
             "scores": scores,
             "radii": radii,
             "median_distance":median_distance,
@@ -367,7 +367,7 @@ def run_simulation(node_count=10, gamma=0.3, rounds_per_node=3, checkpoint_count
 
     # 1) Initialize positions and distance matrix
 
-    record_checkpoint(0)
+    record_checkpoint(0,space)
     for round_idx in range(1, rounds_count+1):
         selected_node = random.randint(0, node_count-1)
         # 2) Find best location for that node
@@ -386,8 +386,8 @@ def run_simulation(node_count=10, gamma=0.3, rounds_per_node=3, checkpoint_count
 
         # Possibly record a checkpoint or print progress
         if (round_idx % checkpoint_rounds) == 0:
-            stationary = record_checkpoint(round_idx)
-            print(f"Round {round_idx} done")
+            stationary = record_checkpoint(round_idx,space)
+            print(f"Round {round_idx} done;"+str((round_idx/checkpoint_rounds)*(100/checkpoint_count))+"% done")
             if stationary:
                 break
 
@@ -411,7 +411,7 @@ def run_simulation(node_count=10, gamma=0.3, rounds_per_node=3, checkpoint_count
         json.dump(files, f)
 
     print(f"Simulation complete. Data written to {output_json_file}")
-    record_checkpoint(round_idx)
+    record_checkpoint(round_idx,space)
 
     print("Simulation complete.")
     # positions now final
@@ -422,7 +422,7 @@ if __name__ == "__main__":
     rounds_per_node=24
     checkpoint_count=50
     num_candidates=50
-    seed=78
+    seed=0
     experiment_name="friday_data"
 
     for i in range(5):
@@ -436,59 +436,4 @@ if __name__ == "__main__":
             seed=seed,
             experiment_name=experiment_name
         )
-    
-    for i in range(5):
-        run_simulation(
-            node_count=node_count,
-            gamma=gamma*(i+1),
-            rounds_per_node=rounds_per_node,
-            checkpoint_count=checkpoint_count,
-            num_candidates=num_candidates,
-            reward_func_name="prop_latency_reward",
-            seed=seed,
-            experiment_name=experiment_name
-        )
-    for i in range(5):
-        run_simulation(
-            node_count=node_count*2,
-            gamma=gamma*(i+1),
-            rounds_per_node=rounds_per_node,
-            checkpoint_count=checkpoint_count,
-            num_candidates=num_candidates,
-            reward_func_name="prop_latency_reward",
-            seed=seed+1,
-            experiment_name=experiment_name
-        )
-    for i in range(5):
-        run_simulation(
-            node_count=node_count*2,
-            gamma=gamma*(i+1),
-            rounds_per_node=rounds_per_node,
-            checkpoint_count=checkpoint_count,
-            num_candidates=num_candidates,
-            reward_func_name="all_reward",
-            seed=seed+1,
-            experiment_name=experiment_name
-        )
-
-    run_simulation(
-        node_count=node_count,
-        gamma=0.3,
-        rounds_per_node=rounds_per_node*2,
-        checkpoint_count=checkpoint_count,
-        num_candidates=num_candidates,
-        reward_func_name="all_reward",
-        seed=seed+2,
-        experiment_name=experiment_name
-    )
-    run_simulation(
-        node_count=node_count,
-        gamma=0.3,
-        rounds_per_node=rounds_per_node*4,
-        checkpoint_count=checkpoint_count,
-        num_candidates=num_candidates,
-        reward_func_name="prop_latency_reward",
-        seed=seed+2,
-        experiment_name=experiment_name
-    )
 
